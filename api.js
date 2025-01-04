@@ -231,8 +231,9 @@ router.post("/login", async (req, res) => {
     return res.status(400).json({ error });
   }
 
-  try {
 
+  try {
+    console.log("Hi")
     const db = client.db("ganttify");
     const userCollection = db.collection("userAccounts");
 
@@ -449,11 +450,11 @@ router.post('/reset-password', async (req, res) =>
   } 
 });
 
-// let userList = [];
+let userList = [];
 // //-----------------> User List Endpoint <-----------------//
-// router.get("/userlist", (req, res) => {
-//   res.status(200).json({ users: userList });
-// });
+router.get("/userlist", (req, res) => {
+  res.status(200).json({ users: userList });
+});
 
 //-----------Read Users Endpoint----------------//
 router.post("/read/users", async (req, res) => {
@@ -541,7 +542,7 @@ const isValidPattern = (pattern) => {
 
 //------> Create Task & Added Task Category <-------//
 router.post('/createtask', async (req, res) => {
-  const {
+  let {
     description = '',
     dueDateTime,
     progress = 'Not Started',
@@ -555,6 +556,19 @@ router.post('/createtask', async (req, res) => {
     taskCategory = '' // Task category is optional
   } = req.body;
 
+  const taskCreatorIdBinary = new Binary(Buffer.from(taskCreatorId, 'base64'), 6); //6 for encrypted data
+
+  // Convert the keyId to Binary with BSON subtype 4
+  const keyBinary = new Binary(Buffer.from(keyId, 'base64'), 4); //4 for encryption key
+  
+  // Using binary versions of id and key for decryption.
+  const decryptedId = await encryptClient.decrypt(taskCreatorIdBinary, {
+    keyId: keyBinary,
+    algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+  });
+
+  taskCreatorId = decryptedId;
+  
   // Validate required fields
   if (!dueDateTime || !taskTitle || !taskCreatorId || !startDateTime) {
     return res.status(400).json({
@@ -986,12 +1000,26 @@ router.post("/createproject", async (req, res) => {
   } = req.body;
   let error = "";
 
+
   if (!nameProject || !founderId) {
     error = "Project name and founder ID are required";
     return res.status(400).json({ error });
   }
 
+  const founderIdBinary = new Binary(Buffer.from(founderId, 'base64'), 6); //6 for encrypted data
+
+  // Convert the keyId to Binary with BSON subtype 4
+  const keyBinary = new Binary(Buffer.from(keyId, 'base64'), 4); //4 for encryption key
+  
+  // Using binary versions of id and key for decryption.
+  const decryptedId = await encryptClient.decrypt(founderIdBinary, {
+    keyId: keyBinary,
+    algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+  });
+  
+  console.log(decryptedId)
   try {
+    console.log(req.body)
     const db = client.db("ganttify");
     const projectCollection = db.collection("projects");
     const teamCollection = db.collection("teams");
@@ -1003,14 +1031,14 @@ router.post("/createproject", async (req, res) => {
       team: new ObjectId(),
       tasks: [], 
       isVisible,
-      founderId: new ObjectId(founderId),
+      founderId: new ObjectId(decryptedId),
       flagDeletion,
       group: [new ObjectId()],
     };
 
     const project = await projectCollection.insertOne(newProject);
     const projectId = project.insertedId;
-    const newTeam = {founderId: new ObjectId(founderId), editors: [], members: [], projects: [projectId],};
+    const newTeam = {founderId: new ObjectId(decryptedId), editors: [], members: [], projects: [projectId],};
     const team = await teamCollection.insertOne(newTeam);
 
     await projectCollection.updateOne(
@@ -1019,7 +1047,7 @@ router.post("/createproject", async (req, res) => {
     );
 
     await userCollection.updateOne(
-      { _id: new ObjectId(founderId) },
+      { _id: new ObjectId(decryptedId) },
       { $push: { projects: projectId } }
     );
 
@@ -1621,6 +1649,21 @@ router.post("/searchusers", async (req, res) => {
 router.post("/search/projects", async (req, res) => {
 
     const { founderId, title, sortBy = "dateCreated" } = req.body;
+
+    const founderIdBinary = new Binary(Buffer.from(founderId, 'base64'), 6); //6 for encrypted data
+
+    // Convert the keyId to Binary with BSON subtype 4
+    const keyBinary = new Binary(Buffer.from(keyId, 'base64'), 4); //4 for encryption key
+    
+    // Using binary versions of id and key for decryption.
+    const decryptedId = await encryptClient.decrypt(founderIdBinary, {
+      keyId: keyBinary,
+      algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+    });
+  
+    
+    console.log(req.body)
+    
   
     try {
       const db = client.db("ganttify");
@@ -1629,9 +1672,9 @@ router.post("/search/projects", async (req, res) => {
   
       const teams = await teamCollection.find({
         $or: [
-          { founderId: new ObjectId(founderId) },
-          { editors: new ObjectId(founderId) },
-          { members: new ObjectId(founderId) }
+          { founderId: new ObjectId(decryptedId) },
+          { editors: new ObjectId(decryptedId) },
+          { members: new ObjectId(decryptedId) }
         ]
       }).toArray();
   
@@ -1643,7 +1686,7 @@ router.post("/search/projects", async (req, res) => {
   
       const query = {
         $or: [
-          { founderId: new ObjectId(founderId) },
+          { founderId: new ObjectId(decryptedId) },
           { team: { $in: teamIds } }
         ],
         nameProject: { $regex: title, $options: "i" }
@@ -1721,10 +1764,21 @@ router.post("/search/tasks", async (req, res) => {
   const {founderId, name, dueDate, sortBy = "completionPercentage" } = req.body;
   const query = {};
 
+  const founderIdBinary = new Binary(Buffer.from(founderId, 'base64'), 6); //6 for encrypted data
+
+  // Convert the keyId to Binary with BSON subtype 4
+  const keyBinary = new Binary(Buffer.from(keyId, 'base64'), 4); //4 for encryption key
+  
+  // Using binary versions of id and key for decryption.
+  const decryptedId = await encryptClient.decrypt(founderIdBinary, {
+    keyId: keyBinary,
+    algorithm: 'AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic'
+  });
+
   if (!dueDate) {
-    query.description = { founderId:founderId,$regex: name, $options: "i" };
+    query.description = { founderId:decryptedId,$regex: name, $options: "i" };
   } else {
-    query.description = { founderId: founderId, $gte: new Date(dueDate) };
+    query.description = { founderId:decryptedId, $gte: new Date(dueDate) };
   }
   console.log(query);
 
@@ -2183,6 +2237,7 @@ router.get('/getProjectDetails/:projectId', async (req, res) => {
     const db = client.db("ganttify");
     const projectCollection = db.collection("projects");
     const project = await projectCollection.findOne({ _id: new ObjectId(projectId) });
+    
 
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
@@ -2191,6 +2246,9 @@ router.get('/getProjectDetails/:projectId', async (req, res) => {
     if (!project.team || !ObjectId.isValid(project.team)) {
       return res.status(404).json({ error: "Invalid team ID in project" });
     }
+
+    var encryptId = await encryptClient.encrypt(project.founderId, {keyId: new Binary(Buffer.from(keyId, "base64"), 4), algorithm: "AEAD_AES_256_CBC_HMAC_SHA_512-Deterministic"});
+    project.founderId = encryptId
 
     const teamCollection = db.collection("teams");
     const team = await teamCollection.findOne({ _id: new ObjectId(project.team) });
